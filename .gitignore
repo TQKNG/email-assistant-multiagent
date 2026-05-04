@@ -13,6 +13,8 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.tox/
+.nox/
 .coverage
 .coverage.*
 htmlcov/
@@ -34,6 +36,7 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+pip-wheel-metadata/
 
 # Local runtime/artifact folders
 .langgraph_api/

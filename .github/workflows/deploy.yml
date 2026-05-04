@@ -1,4 +1,4 @@
-name: deploy-to-azure
+name: Deploy to Azure
 
 on:
   workflow_dispatch:
@@ -7,17 +7,30 @@ on:
         description: 'Target Azure resource group override (optional)'
         required: false
         default: ''
+        type: string
       image_repository:
         description: 'Container image repository name (optional)'
         required: false
         default: 'email-assistant'
+        type: string
+      environment:
+        description: 'Deployment environment'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+          - dev
 
+# Least privilege permissions - OIDC for Azure login
 permissions:
   contents: read
   id-token: write
 
+# Prevent concurrent deployments
 concurrency:
-  group: deploy-email-assistant-${{ github.ref }}
+  group: deploy-${{ github.event.inputs.environment || 'production' }}-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -29,75 +42,259 @@ env:
   BICEP_PARAMETERS: infra/dev.bicepparam
 
 jobs:
-  deploy:
+  validate:
+    name: Pre-deployment Validation
     runs-on: ubuntu-latest
-    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+        with:
+          persist-credentials: false
+      
+      - name: Validate required secrets and variables
+        run: |
+          echo "Validating configuration..."
+          
+          # Check required secrets (without exposing values)
+          if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then
+            echo "❌ AZURE_CLIENT_ID secret is not set"
+            exit 1
+          fi
+          echo "✓ AZURE_CLIENT_ID is configured"
+          
+          if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
+            echo "❌ AZURE_TENANT_ID secret is not set"
+            exit 1
+          fi
+          echo "✓ AZURE_TENANT_ID is configured"
+          
+          if [ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]; then
+            echo "❌ AZURE_SUBSCRIPTION_ID secret is not set"
+            exit 1
+          fi
+          echo "✓ AZURE_SUBSCRIPTION_ID is configured"
+          
+          # Check required variables
+          if [ -z "$ACR_NAME" ]; then
+            echo "❌ AZURE_CONTAINER_REGISTRY_NAME variable is not set"
+            exit 1
+          fi
+          echo "✓ ACR_NAME: $ACR_NAME"
+          
+          if [ -z "$ACR_LOGIN_SERVER" ]; then
+            echo "❌ AZURE_CONTAINER_REGISTRY_LOGIN_SERVER variable is not set"
+            exit 1
+          fi
+          echo "✓ ACR_LOGIN_SERVER: $ACR_LOGIN_SERVER"
+          
+          echo "✓ All required configuration validated"
+  
+  build-and-push:
+    name: Build and Push Container Image
+    runs-on: ubuntu-latest
+    needs: validate
+    
+    outputs:
+      image-tag: ${{ steps.image.outputs.tag }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to Azure with OIDC
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+      - name: Verify Azure context
+        run: |
+          echo "Verifying Azure login and subscription..."
+          az account show --output table
+          echo "✓ Successfully authenticated to Azure"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - name: Log in to Azure Container Registry
+        run: |
+          echo "Logging into ACR: $ACR_NAME"
+          az acr login --name "$ACR_NAME"
+          echo "✓ Successfully logged into ACR"
+
+      - name: Compute image tags
+        id: image
+        run: |
+          # Primary tag with commit SHA
+          echo "tag=$ACR_LOGIN_SERVER/$IMAGE_REPOSITORY:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          
+          # Additional tags
+          echo "latest-tag=$ACR_LOGIN_SERVER/$IMAGE_REPOSITORY:latest" >> "$GITHUB_OUTPUT"
+          echo "run-tag=$ACR_LOGIN_SERVER/$IMAGE_REPOSITORY:run-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push container image
+        id: build
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.tag }}
+            ${{ steps.image.outputs.latest-tag }}
+            ${{ steps.image.outputs.run-tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.repository.updated_at }}
+          cache-from: type=registry,ref=${{ steps.image.outputs.latest-tag }}
+          cache-to: type=inline
+          provenance: false
+          sbom: false
+      
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@f781cce5aab226378ee181d764ab90ea0be3cdd8 # 0.29.0
+        with:
+          image-ref: ${{ steps.image.outputs.tag }}
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+      
+      - name: Image build summary
+        run: |
+          echo "### Container Image Built Successfully ✓" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ steps.image.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+  
+  deploy:
+    name: Deploy to Azure Container Apps
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: ${{ github.event.inputs.environment || 'production' }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+        with:
+          persist-credentials: false
 
-      - name: Log in to Azure
-        uses: azure/login@v2
+      - name: Log in to Azure with OIDC
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Verify required configuration
-        run: |
-          test -n "$RESOURCE_GROUP"
-          test -n "$ACR_NAME"
-          test -n "$ACR_LOGIN_SERVER"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Azure Container Registry
-        run: az acr login --name "$ACR_NAME"
-
-      - name: Compute image tag
-        id: image
-        run: echo "tag=$ACR_LOGIN_SERVER/$IMAGE_REPOSITORY:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: ${{ steps.image.outputs.tag }}
-
       - name: Upgrade Bicep CLI
-        run: az bicep upgrade
-
-      - name: Validate deployment
         run: |
+          echo "Upgrading Bicep CLI..."
+          az bicep upgrade
+          az bicep version
+      
+      - name: Verify resource group exists
+        run: |
+          echo "Verifying resource group: $RESOURCE_GROUP"
+          if ! az group show --name "$RESOURCE_GROUP" --output none 2>/dev/null; then
+            echo "❌ Resource group '$RESOURCE_GROUP' does not exist"
+            echo "Create it with: az group create --name $RESOURCE_GROUP --location <location>"
+            exit 1
+          fi
+          echo "✓ Resource group exists"
+
+      - name: Validate Bicep template
+        run: |
+          echo "Validating Bicep deployment..."
           az deployment group validate \
-            --name email-assistant-${GITHUB_RUN_ID}-validate \
+            --name email-assistant-${{ github.run_id }}-validate \
             --resource-group "$RESOURCE_GROUP" \
             --template-file "$BICEP_TEMPLATE" \
             --parameters "$BICEP_PARAMETERS" \
-            --parameters containerImage="${{ steps.image.outputs.tag }}" containerRegistryName="$ACR_NAME" \
+            --parameters containerImage="${{ needs.build-and-push.outputs.image-tag }}" \
+            --parameters containerRegistryName="$ACR_NAME" \
             --only-show-errors
+          echo "✓ Template validation passed"
 
-      - name: What-if preview
+      - name: Preview infrastructure changes (What-If)
         run: |
+          echo "Running what-if analysis..."
           az deployment group what-if \
-            --name email-assistant-${GITHUB_RUN_ID}-whatif \
+            --name email-assistant-${{ github.run_id }}-whatif \
             --resource-group "$RESOURCE_GROUP" \
             --template-file "$BICEP_TEMPLATE" \
             --parameters "$BICEP_PARAMETERS" \
-            --parameters containerImage="${{ steps.image.outputs.tag }}" containerRegistryName="$ACR_NAME" \
+            --parameters containerImage="${{ needs.build-and-push.outputs.image-tag }}" \
+            --parameters containerRegistryName="$ACR_NAME" \
             --result-format FullResourcePayloads \
             --only-show-errors
 
-      - name: Deploy infrastructure and app
+      - name: Deploy infrastructure and application
+        id: deployment
         run: |
+          echo "Starting deployment..."
+          DEPLOYMENT_NAME="email-assistant-${{ github.run_id }}"
+          
           az deployment group create \
-            --name email-assistant-${GITHUB_RUN_ID} \
+            --name "$DEPLOYMENT_NAME" \
             --resource-group "$RESOURCE_GROUP" \
             --template-file "$BICEP_TEMPLATE" \
             --parameters "$BICEP_PARAMETERS" \
-            --parameters containerImage="${{ steps.image.outputs.tag }}" containerRegistryName="$ACR_NAME" \
-            --only-show-errors
+            --parameters containerImage="${{ needs.build-and-push.outputs.image-tag }}" \
+            --parameters containerRegistryName="$ACR_NAME" \
+            --output json \
+            --only-show-errors > deployment-output.json
+          
+          echo "✓ Deployment completed successfully"
+          
+          # Extract outputs
+          CONTAINER_APP_URL=$(jq -r '.properties.outputs.containerAppUrl.value' deployment-output.json)
+          CONTAINER_APP_NAME=$(jq -r '.properties.outputs.containerAppName.value' deployment-output.json)
+          
+          echo "url=$CONTAINER_APP_URL" >> "$GITHUB_OUTPUT"
+          echo "app-name=$CONTAINER_APP_NAME" >> "$GITHUB_OUTPUT"
+      
+      - name: Wait for application readiness
+        run: |
+          APP_URL="${{ steps.deployment.outputs.url }}"
+          if [[ "$APP_URL" != "Internal only" ]]; then
+            echo "Waiting for application to become ready..."
+            for i in {1..30}; do
+              if curl -f -s "${APP_URL}/health" > /dev/null 2>&1; then
+                echo "✓ Application is healthy and responding"
+                exit 0
+              fi
+              echo "Attempt $i/30: Application not ready yet, waiting..."
+              sleep 10
+            done
+            echo "⚠️ Application did not become ready within timeout"
+            exit 1
+          else
+            echo "Application is internal-only, skipping health check"
+          fi
+      
+      - name: Deployment summary
+        run: |
+          echo "### Deployment Summary ✓" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment || 'production' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Resource Group:** \`$RESOURCE_GROUP\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Container App:** \`${{ steps.deployment.outputs.app-name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ needs.build-and-push.outputs.image-tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.deployment.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment ID:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Get outputs from deployment
+          if [ -f deployment-output.json ]; then
+            echo "#### Deployment Outputs" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            jq '.properties.outputs' deployment-output.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi

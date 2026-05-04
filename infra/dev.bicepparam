@@ -1,19 +1,39 @@
 using './main.bicep'
 
+// ========================================
+// General Configuration
+// ========================================
+
 param namePrefix = 'email-assistant-dev'
+
+// ========================================
+// Container Configuration
+// ========================================
+
 param containerImage = 'myregistry.azurecr.io/email-assistant:latest'
 
 // Set this only when the image lives in an ACR in the same resource group.
+// Leave empty for public images or images from external registries.
 param containerRegistryName = ''
+
+// ========================================
+// Ingress and Scaling
+// ========================================
 
 param ingressExternal = true
 param targetPort = 8000
-param minReplicas = 0
+param minReplicas = 0  // Set to 0 for dev to save costs (allows scale-to-zero)
 param maxReplicas = 3
 param httpConcurrentRequests = 10
-param cpuCores = 1
+param cpuCores = 1  // Container CPU cores (supports fractional values via code change)
 param memory = '2Gi'
 
+// ========================================
+// Networking Configuration
+// ========================================
+
+param zoneRedundant = false  // Set to true for production
+param environmentPublicNetworkAccess = 'Enabled'
 param enableNetworkLayer = true
 param virtualNetworkName = 'vnet-email-assistant-dev'
 param virtualNetworkAddressPrefix = '10.40.0.0/23'
@@ -22,8 +42,15 @@ param infrastructureSubnetAddressPrefix = '10.40.0.0/27'
 param networkSecurityGroupName = 'nsg-email-assistant-dev'
 param internalManagedEnvironment = false
 
+// ========================================
+// Azure AI Configuration
+// ========================================
+
 // Required for runtime calls through DefaultAzureCredential.
 param azureAiProjectEndpoint = 'https://your-project.services.ai.azure.com/api/projects/your-project'
+
+// Note: Log retention and diagnostics are configured in the main template
+// with default values (30 days retention, diagnostics enabled)
 
 // Optional but recommended. When both names are set, the template grants Azure AI User to the container app identity.
 // The Foundry account and project must be in the same resource group as this deployment.
@@ -39,8 +66,13 @@ param deepseekChatModel = 'DeepSeek-R1'
 param knowledgeBaseAgentName = 'knowledge-base'
 param knowledgeBaseAgentVersion = 'latest'
 
+// ========================================
+// Resource Tagging
+// ========================================
+
 param tags = {
   environment: 'dev'
   app: 'email-assistant'
   costCenter: 'sandbox'
+  owner: 'devops-team'
 }
