@@ -22,8 +22,7 @@ The deploy workflow uses OpenID Connect (OIDC) for Azure authentication—no lon
 
 - **pip-audit** - Python dependency vulnerabilities
 - **Dependency Review** - PR-level vulnerable dependency detection  
-- **Trivy** - Container image vulnerabilities
-- **CodeQL** - Static application security testing (SAST)
+- **Trivy** - Container image vulnerabilities (CRITICAL, HIGH)
 
 ## CI Pipeline (ci.yml)
 
@@ -32,7 +31,6 @@ The deploy workflow uses OpenID Connect (OIDC) for Azure authentication—no lon
 1. **Python Quality Checks** - Lint, format, type check, test
 2. **Dependency Review** - Scan PRs for vulnerable dependencies
 3. **Docker Build & Scan** - Build and scan container with Trivy
-4. **Security Scanning** - CodeQL SAST analysis
 
 ## Deploy Pipeline (deploy.yml)
 

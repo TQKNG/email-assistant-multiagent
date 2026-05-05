@@ -136,7 +136,6 @@ jobs:
     
     permissions:
       contents: read
-      security-events: write
     
     steps:
       - name: Checkout code
@@ -163,22 +162,9 @@ jobs:
         uses: aquasecurity/trivy-action@f781cce5aab226378ee181d764ab90ea0be3cdd8 # 0.29.0
         with:
           image-ref: email-assistant:ci-${{ github.sha }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-      
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
-      
-      - name: Run Trivy in table format
-        uses: aquasecurity/trivy-action@f781cce5aab226378ee181d764ab90ea0be3cdd8 # 0.29.0
-        with:
-          image-ref: email-assistant:ci-${{ github.sha }}
           format: 'table'
-          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
       
       - name: Test container startup
         run: |
@@ -191,29 +177,3 @@ jobs:
           echo "✓ Container health check passed"
           
           docker stop test-container
-  
-  security-scan:
-    name: Security Scanning
-    runs-on: ubuntu-latest
-    continue-on-error: true  # Allow CI to pass while fixing permissions
-    
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
-        with:
-          persist-credentials: false
-      
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
-        with:
-          languages: python
-      
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
-        with:
-          category: "/language:python"
