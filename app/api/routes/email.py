@@ -18,4 +18,6 @@ def process_email(payload: InputState) -> OutputState:
         result = run_email_workflow(payload.model_dump())
         return OutputState.model_validate(result)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Email processing failed: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Email processing failed: {exc}"
+        ) from exc

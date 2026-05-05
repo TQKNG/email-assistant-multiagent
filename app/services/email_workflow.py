@@ -5,7 +5,13 @@ from typing import Literal
 from azure.identity import DefaultAzureCredential
 from langchain_azure_ai.agents import AgentServiceFactory
 from langchain_azure_ai.chat_models import AzureAIOpenAIApiChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -17,8 +23,20 @@ from app.core.settings import (
     OPENAI_CHAT_MODEL,
     PROJECT_ENDPOINT,
 )
-from app.models.email import AnalysisResult, ClassifyResult, EmailState, InputState, OutputState, TemplateResult
-from app.prompts.email_prompts import ANALYZER_SYSTEM, CLASSIFY_SYSTEM, ORCHESTRATOR_SYSTEM, REPLY_SYSTEM
+from app.models.email import (
+    AnalysisResult,
+    ClassifyResult,
+    EmailState,
+    InputState,
+    OutputState,
+    TemplateResult,
+)
+from app.prompts.email_prompts import (
+    ANALYZER_SYSTEM,
+    CLASSIFY_SYSTEM,
+    ORCHESTRATOR_SYSTEM,
+    REPLY_SYSTEM,
+)
 
 
 llm = AzureAIOpenAIApiChatModel(
@@ -50,7 +68,9 @@ def classify_and_summarize(subject: str, title: str, content: str) -> str:
     result = structured_llm.invoke(
         [
             SystemMessage(content=CLASSIFY_SYSTEM),
-            HumanMessage(content=f"Subject: {subject}\nTitle: {title}\nContent: {content}"),
+            HumanMessage(
+                content=f"Subject: {subject}\nTitle: {title}\nContent: {content}"
+            ),
         ]
     )
     data = ClassifyResult.model_validate(result).model_dump()
@@ -58,7 +78,9 @@ def classify_and_summarize(subject: str, title: str, content: str) -> str:
 
 
 @tool
-def analyze_email_content(subject: str, content: str, classification: str, summary: str) -> str:
+def analyze_email_content(
+    subject: str, content: str, classification: str, summary: str
+) -> str:
     """Analyze the email for key signals, risks, and the recommended handling approach."""
     structured_llm = llm.with_structured_output(AnalysisResult, include_raw=False)
     result = structured_llm.invoke(
@@ -134,7 +156,9 @@ def orchestrator_node(state: EmailState):
             )
         ]
 
-    response = llm_with_tools.invoke([SystemMessage(content=ORCHESTRATOR_SYSTEM)] + messages)
+    response = llm_with_tools.invoke(
+        [SystemMessage(content=ORCHESTRATOR_SYSTEM)] + messages
+    )
     return {"messages": [response]}
 
 
@@ -146,7 +170,9 @@ def knowledge_base_node(state: EmailState):
     classification = classify.get("classification")
     summary = classify.get("summary")
     if not classification or not summary:
-        raise ValueError("KnowledgeBaseNode requires classification and summary from tool results.")
+        raise ValueError(
+            "KnowledgeBaseNode requires classification and summary from tool results."
+        )
 
     kb_query = (
         f"Classification: {classification}\n"
@@ -156,7 +182,9 @@ def knowledge_base_node(state: EmailState):
         f"Content: {state['content']}\n\n"
     )
 
-    kb_response = knowledge_base_agent_node.invoke({"messages": [HumanMessage(content=kb_query)]})
+    kb_response = knowledge_base_agent_node.invoke(
+        {"messages": [HumanMessage(content=kb_query)]}
+    )
 
     pending_type = None
     if isinstance(kb_response, dict):
@@ -167,27 +195,51 @@ def knowledge_base_node(state: EmailState):
     if pending_type == "mcp_approval":
         ai_msg = kb_response.get("messages") if isinstance(kb_response, dict) else None
         if not isinstance(ai_msg, AIMessage) or not getattr(ai_msg, "tool_calls", None):
-            raise ValueError("knowledge-base agent pending approval but no tool_call was returned.")
+            raise ValueError(
+                "knowledge-base agent pending approval but no tool_call was returned."
+            )
 
         approval_call_id = ai_msg.tool_calls[0]["id"]
         kb_response = knowledge_base_agent_node.invoke(
             {
-                "messages": [ToolMessage(content='{"approve": true}', tool_call_id=approval_call_id)],
-                "azure_ai_agents_conversation_id": kb_response.get("azure_ai_agents_conversation_id"),
-                "azure_ai_agents_previous_response_id": kb_response.get("azure_ai_agents_previous_response_id"),
-                "azure_ai_agents_pending_type": kb_response.get("azure_ai_agents_pending_type"),
+                "messages": [
+                    ToolMessage(
+                        content='{"approve": true}', tool_call_id=approval_call_id
+                    )
+                ],
+                "azure_ai_agents_conversation_id": kb_response.get(
+                    "azure_ai_agents_conversation_id"
+                ),
+                "azure_ai_agents_previous_response_id": kb_response.get(
+                    "azure_ai_agents_previous_response_id"
+                ),
+                "azure_ai_agents_pending_type": kb_response.get(
+                    "azure_ai_agents_pending_type"
+                ),
             }
         )
 
-    kb_messages = kb_response.get("messages", []) if isinstance(kb_response, dict) else kb_response
+    kb_messages = (
+        kb_response.get("messages", [])
+        if isinstance(kb_response, dict)
+        else kb_response
+    )
     if isinstance(kb_messages, dict):
         ai_payload = kb_messages.get("AIMessage")
         if isinstance(ai_payload, dict):
             template_text = ai_payload.get("content", "")
             if not template_text or not str(template_text).strip():
-                raise ValueError("knowledge-base agent returned empty content after approval.")
-            return {"email_template": TemplateResult(template=str(template_text).strip()).template}
-        raise ValueError("knowledge-base agent returned an unexpected dict message shape.")
+                raise ValueError(
+                    "knowledge-base agent returned empty content after approval."
+                )
+            return {
+                "email_template": TemplateResult(
+                    template=str(template_text).strip()
+                ).template
+            }
+        raise ValueError(
+            "knowledge-base agent returned an unexpected dict message shape."
+        )
 
     if isinstance(kb_messages, BaseMessage):
         last_msg = kb_messages
@@ -227,7 +279,9 @@ def synthesizer_node(state: EmailState):
     if not template_text:
         missing.append("template")
     if missing:
-        raise ValueError(f"Synthesizer: missing required fields from workers: {missing}")
+        raise ValueError(
+            f"Synthesizer: missing required fields from workers: {missing}"
+        )
 
     classification = classify["classification"]
     summary = classify["summary"]
