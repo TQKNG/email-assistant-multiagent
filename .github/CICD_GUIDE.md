@@ -18,11 +18,10 @@ Default permissions are read-only, with explicit grants only when needed.
 
 The deploy workflow uses OpenID Connect (OIDC) for Azure authentication—no long-lived credentials.
 
-### 4. **Comprehensive Security Scanning** ✅
+### 4. **Security Scanning** ✅
 
 - **pip-audit** - Python dependency vulnerabilities
-- **Dependency Review** - PR-level vulnerable dependency detection  
-- **Trivy** - Container image vulnerabilities (CRITICAL, HIGH)
+- **Dependency Review** - PR-level vulnerable dependency detection
 
 ## CI Pipeline (ci.yml)
 
@@ -30,7 +29,7 @@ The deploy workflow uses OpenID Connect (OIDC) for Azure authentication—no lon
 
 1. **Python Quality Checks** - Lint, format, type check, test
 2. **Dependency Review** - Scan PRs for vulnerable dependencies
-3. **Docker Build & Scan** - Build and scan container with Trivy
+3. **Docker Build & Test** - Build and test container startup
 
 ## Deploy Pipeline (deploy.yml)
 

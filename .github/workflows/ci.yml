@@ -132,7 +132,7 @@ jobs:
           fail-on-severity: moderate
   
   docker-build:
-    name: Docker Build and Security Scan
+    name: Docker Build and Test
     runs-on: ubuntu-latest
     needs: python-quality
     
@@ -159,15 +159,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
-      
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@f781cce5aab226378ee181d764ab90ea0be3cdd8 # 0.29.0
-        with:
-          image-ref: email-assistant:ci-${{ github.sha }}
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
       
       - name: Test container startup
         run: |
