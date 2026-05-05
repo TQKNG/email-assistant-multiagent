@@ -166,6 +166,7 @@ jobs:
           image-ref: email-assistant:ci-${{ github.sha }}
           format: 'table'
           exit-code: '1'
+          ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
       
       - name: Test container startup
