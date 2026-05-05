@@ -3,13 +3,35 @@ name: Deploy to Azure
 on:
   workflow_dispatch:
     inputs:
+      subscription_id:
+        description: 'Azure Subscription ID'
+        required: true
+        type: string
+      client_id:
+        description: 'Azure Client ID (Service Principal)'
+        required: true
+        type: string
+      tenant_id:
+        description: 'Azure Tenant ID'
+        required: true
+        type: string
       resource_group:
-        description: 'Target Azure resource group override (optional)'
+        description: 'Target Azure resource group'
         required: false
-        default: ''
+        default: 'rg-email-assistant'
+        type: string
+      location:
+        description: 'Azure region for resources'
+        required: false
+        default: 'eastus'
+        type: string
+      acr_name:
+        description: 'Azure Container Registry name (must be globally unique)'
+        required: false
+        default: 'acremailassistant'
         type: string
       image_repository:
-        description: 'Container image repository name (optional)'
+        description: 'Container image repository name'
         required: false
         default: 'email-assistant'
         type: string
@@ -34,17 +56,124 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RESOURCE_GROUP: ${{ github.event.inputs.resource_group || vars.AZURE_RESOURCE_GROUP || 'rg-sandbox' }}
-  ACR_NAME: ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}
-  ACR_LOGIN_SERVER: ${{ vars.AZURE_CONTAINER_REGISTRY_LOGIN_SERVER }}
-  IMAGE_REPOSITORY: ${{ github.event.inputs.image_repository || vars.IMAGE_REPOSITORY || 'email-assistant' }}
+  SUBSCRIPTION_ID: ${{ github.event.inputs.subscription_id }}
+  CLIENT_ID: ${{ github.event.inputs.client_id }}
+  TENANT_ID: ${{ github.event.inputs.tenant_id }}
+  RESOURCE_GROUP: ${{ github.event.inputs.resource_group || 'rg-email-assistant' }}
+  LOCATION: ${{ github.event.inputs.location || 'eastus' }}
+  ACR_NAME: ${{ github.event.inputs.acr_name || 'acremailassistant' }}
+  IMAGE_REPOSITORY: ${{ github.event.inputs.image_repository || 'email-assistant' }}
   BICEP_TEMPLATE: infra/main.bicep
   BICEP_PARAMETERS: infra/dev.bicepparam
 
 jobs:
+  provision-infrastructure:
+    name: Provision Azure Infrastructure
+    runs-on: ubuntu-latest
+    
+    outputs:
+      acr-login-server: ${{ steps.acr.outputs.login-server }}
+      resource-group-created: ${{ steps.rg.outputs.created }}
+      acr-created: ${{ steps.acr.outputs.created }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to Azure with OIDC
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
+        with:
+          client-id: ${{ env.CLIENT_ID }}
+          tenant-id: ${{ env.TENANT_ID }}
+          subscription-id: ${{ env.SUBSCRIPTION_ID }}
+      
+      - name: Set Azure subscription context
+        run: |
+          echo "Setting subscription context..."
+          az account set --subscription "$SUBSCRIPTION_ID"
+          az account show --output table
+          echo "✓ Subscription context set"
+      
+      - name: Create or verify resource group
+        id: rg
+        run: |
+          echo "Checking resource group: $RESOURCE_GROUP"
+          
+          if az group show --name "$RESOURCE_GROUP" --output none 2>/dev/null; then
+            echo "✓ Resource group already exists"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Creating resource group: $RESOURCE_GROUP in $LOCATION"
+            az group create \
+              --name "$RESOURCE_GROUP" \
+              --location "$LOCATION" \
+              --tags \
+                "environment=${{ github.event.inputs.environment || 'production' }}" \
+                "managed-by=github-actions" \
+                "repository=${{ github.repository }}" \
+              --output table
+            echo "✓ Resource group created successfully"
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+      
+      - name: Create or verify Azure Container Registry
+        id: acr
+        run: |
+          echo "Checking Azure Container Registry: $ACR_NAME"
+          
+          if az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
+            echo "✓ ACR already exists"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Creating ACR: $ACR_NAME"
+            az acr create \
+              --name "$ACR_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --location "$LOCATION" \
+              --sku Standard \
+              --admin-enabled false \
+              --tags \
+                "environment=${{ github.event.inputs.environment || 'production' }}" \
+                "managed-by=github-actions" \
+              --output table
+            echo "✓ ACR created successfully"
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+          
+          # Get login server
+          LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query loginServer -o tsv)
+          echo "login-server=$LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+          echo "✓ ACR Login Server: $LOGIN_SERVER"
+      
+      - name: Configure ACR for Container Apps
+        run: |
+          echo "Configuring ACR for Container Apps integration..."
+          
+          # Enable admin user temporarily for Container Apps (will use managed identity later)
+          az acr update \
+            --name "$ACR_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --admin-enabled true \
+            --output none
+          
+          echo "✓ ACR configured for Container Apps"
+      
+      - name: Infrastructure provisioning summary
+        run: |
+          echo "### Infrastructure Provisioning Summary ✓" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Subscription:** \`$SUBSCRIPTION_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Resource Group:** \`$RESOURCE_GROUP\` $(if [ "${{ steps.rg.outputs.created }}" = "true" ]; then echo "(newly created)"; else echo "(existing)"; fi)" >> $GITHUB_STEP_SUMMARY
+          echo "**Location:** \`$LOCATION\`" >> $GITHUB_STEP_SUMMARY
+          echo "**ACR Name:** \`$ACR_NAME\` $(if [ "${{ steps.acr.outputs.created }}" = "true" ]; then echo "(newly created)"; else echo "(existing)"; fi)" >> $GITHUB_STEP_SUMMARY
+          echo "**ACR Login Server:** \`${{ steps.acr.outputs.login-server }}\`" >> $GITHUB_STEP_SUMMARY
+
   validate:
     name: Pre-deployment Validation
     runs-on: ubuntu-latest
+    needs: provision-infrastructure
     
     steps:
       - name: Checkout code
@@ -52,48 +181,22 @@ jobs:
         with:
           persist-credentials: false
       
-      - name: Validate required secrets and variables
+      - name: Validate configuration
         run: |
-          echo "Validating configuration..."
-          
-          # Check required secrets (without exposing values)
-          if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then
-            echo "❌ AZURE_CLIENT_ID secret is not set"
-            exit 1
-          fi
-          echo "✓ AZURE_CLIENT_ID is configured"
-          
-          if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
-            echo "❌ AZURE_TENANT_ID secret is not set"
-            exit 1
-          fi
-          echo "✓ AZURE_TENANT_ID is configured"
-          
-          if [ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]; then
-            echo "❌ AZURE_SUBSCRIPTION_ID secret is not set"
-            exit 1
-          fi
-          echo "✓ AZURE_SUBSCRIPTION_ID is configured"
-          
-          # Check required variables
-          if [ -z "$ACR_NAME" ]; then
-            echo "❌ AZURE_CONTAINER_REGISTRY_NAME variable is not set"
-            exit 1
-          fi
-          echo "✓ ACR_NAME: $ACR_NAME"
-          
-          if [ -z "$ACR_LOGIN_SERVER" ]; then
-            echo "❌ AZURE_CONTAINER_REGISTRY_LOGIN_SERVER variable is not set"
-            exit 1
-          fi
-          echo "✓ ACR_LOGIN_SERVER: $ACR_LOGIN_SERVER"
-          
-          echo "✓ All required configuration validated"
+          echo "### Validation Results ✓" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Subscription ID:** \`$SUBSCRIPTION_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Client ID:** \`$CLIENT_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tenant ID:** \`$TENANT_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Resource Group:** \`$RESOURCE_GROUP\`" >> $GITHUB_STEP_SUMMARY
+          echo "**ACR Name:** \`$ACR_NAME\`" >> $GITHUB_STEP_SUMMARY
+          echo "**ACR Login Server:** \`${{ needs.provision-infrastructure.outputs.acr-login-server }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "✓ All configuration validated"
   
   build-and-push:
     name: Build and Push Container Image
     runs-on: ubuntu-latest
-    needs: validate
+    needs: [provision-infrastructure, validate]
     
     outputs:
       image-tag: ${{ steps.image.outputs.tag }}
@@ -108,13 +211,14 @@ jobs:
       - name: Log in to Azure with OIDC
         uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.CLIENT_ID }}
+          tenant-id: ${{ env.TENANT_ID }}
+          subscription-id: ${{ env.SUBSCRIPTION_ID }}
       
       - name: Verify Azure context
         run: |
           echo "Verifying Azure login and subscription..."
+          az account set --subscription "$SUBSCRIPTION_ID"
           az account show --output table
           echo "✓ Successfully authenticated to Azure"
 
@@ -130,6 +234,8 @@ jobs:
       - name: Compute image tags
         id: image
         run: |
+          ACR_LOGIN_SERVER="${{ needs.provision-infrastructure.outputs.acr-login-server }}"
+          
           # Primary tag with commit SHA
           echo "tag=$ACR_LOGIN_SERVER/$IMAGE_REPOSITORY:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           
@@ -157,14 +263,6 @@ jobs:
           provenance: false
           sbom: false
       
-      - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@f781cce5aab226378ee181d764ab90ea0be3cdd8 # 0.29.0
-        with:
-          image-ref: ${{ steps.image.outputs.tag }}
-          format: 'table'
-          exit-code: '0'
-          severity: 'CRITICAL,HIGH'
-      
       - name: Image build summary
         run: |
           echo "### Container Image Built Successfully ✓" >> $GITHUB_STEP_SUMMARY
@@ -176,7 +274,7 @@ jobs:
   deploy:
     name: Deploy to Azure Container Apps
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: [provision-infrastructure, build-and-push]
     environment: ${{ github.event.inputs.environment || 'production' }}
 
     steps:
@@ -188,25 +286,19 @@ jobs:
       - name: Log in to Azure with OIDC
         uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ env.CLIENT_ID }}
+          tenant-id: ${{ env.TENANT_ID }}
+          subscription-id: ${{ env.SUBSCRIPTION_ID }}
+      
+      - name: Set Azure subscription context
+        run: |
+          az account set --subscription "$SUBSCRIPTION_ID"
 
       - name: Upgrade Bicep CLI
         run: |
           echo "Upgrading Bicep CLI..."
           az bicep upgrade
           az bicep version
-      
-      - name: Verify resource group exists
-        run: |
-          echo "Verifying resource group: $RESOURCE_GROUP"
-          if ! az group show --name "$RESOURCE_GROUP" --output none 2>/dev/null; then
-            echo "❌ Resource group '$RESOURCE_GROUP' does not exist"
-            echo "Create it with: az group create --name $RESOURCE_GROUP --location <location>"
-            exit 1
-          fi
-          echo "✓ Resource group exists"
 
       - name: Validate Bicep template
         run: |

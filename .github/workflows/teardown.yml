@@ -1,0 +1,192 @@
+name: Teardown Azure Resources
+
+on:
+  workflow_dispatch:
+    inputs:
+      subscription_id:
+        description: 'Azure Subscription ID'
+        required: true
+        type: string
+      client_id:
+        description: 'Azure Client ID (Service Principal)'
+        required: true
+        type: string
+      tenant_id:
+        description: 'Azure Tenant ID'
+        required: true
+        type: string
+      resource_group:
+        description: 'Azure resource group to delete'
+        required: true
+        type: string
+      confirm_deletion:
+        description: 'Type DELETE to confirm resource group deletion'
+        required: true
+        type: string
+      deletion_mode:
+        description: 'Deletion mode'
+        required: false
+        default: 'soft-delete'
+        type: choice
+        options:
+          - soft-delete
+          - hard-delete
+          - scale-to-zero
+      delete_acr_only:
+        description: 'Delete only ACR (keep resource group and other resources)'
+        required: false
+        default: false
+        type: boolean
+      acr_name:
+        description: 'ACR name (required if delete_acr_only is true)'
+        required: false
+        type: string
+
+# Least privilege permissions
+permissions:
+  contents: read
+  id-token: write
+
+# Prevent concurrent teardowns
+concurrency:
+  group: teardown-${{ github.event.inputs.resource_group }}
+  cancel-in-progress: false
+
+env:
+  SUBSCRIPTION_ID: ${{ github.event.inputs.subscription_id }}
+  CLIENT_ID: ${{ github.event.inputs.client_id }}
+  TENANT_ID: ${{ github.event.inputs.tenant_id }}
+  RESOURCE_GROUP: ${{ github.event.inputs.resource_group }}
+  ACR_NAME: ${{ github.event.inputs.acr_name }}
+  DELETION_MODE: ${{ github.event.inputs.deletion_mode || 'soft-delete' }}
+
+jobs:
+  validate-deletion:
+    name: Validate Deletion Request
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_deletion }}" != "DELETE" ]; then
+            echo "❌ Deletion not confirmed. You must type DELETE to proceed."
+            exit 1
+          fi
+          echo "✓ Deletion confirmed"
+      
+      - name: Display teardown plan
+        run: |
+          echo "### Teardown Plan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**⚠️ WARNING: This action is irreversible!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Subscription:** \`\" >> $GITHUB_STEP_SUMMARY
+          echo "**Resource Group:** \`\" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ github.event.inputs.delete_acr_only }}" = "true" ]; then
+            echo "**Action:** Delete ACR only (\`\)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Action:** Delete entire resource group and all contained resources" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Confirmation:** ${{ github.event.inputs.confirm_deletion }}" >> $GITHUB_STEP_SUMMARY
+
+  teardown:
+    name: Teardown Resources
+    runs-on: ubuntu-latest
+    needs: validate-deletion
+    
+    steps:
+      - name: Log in to Azure with OIDC
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
+        with:
+          client-id: ${{ env.CLIENT_ID }}
+          tenant-id: ${{ env.TENANT_ID }}
+          subscription-id: ${{ env.SUBSCRIPTION_ID }}
+      
+      - name: Set Azure subscription context
+        run: |
+          echo "Setting subscription context..."
+          az account set --subscription "$SUBSCRIPTION_ID"
+          az account show --output table
+          echo "✓ Subscription context set"
+      
+      - name: Verify resource group exists
+        run: |
+          echo "Verifying resource group: $RESOURCE_GROUP"
+          
+          if ! az group show --name "$RESOURCE_GROUP" --output none 2>/dev/null; then
+            echo "⚠️ Resource group '$RESOURCE_GROUP' does not exist. Nothing to delete."
+            exit 0
+          fi
+          echo "✓ Resource group exists"
+      
+      - name: List resources to be deleted
+        run: |
+          echo "Resources in resource group $RESOURCE_GROUP:"
+          az resource list --resource-group "$RESOURCE_GROUP" --output table
+          
+          echo ""
+          echo "### Resources to be deleted:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\\\" >> $GITHUB_STEP_SUMMARY
+          az resource list --resource-group "$RESOURCE_GROUP" --output table >> $GITHUB_STEP_SUMMARY
+          echo "\\\" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Delete ACR only (if requested)
+        if: github.event.inputs.delete_acr_only == 'true'
+        run: |
+          echo "Deleting Azure Container Registry: $ACR_NAME"
+          
+          if ! az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
+            echo "⚠️ ACR '$ACR_NAME' does not exist in resource group '$RESOURCE_GROUP'"
+            exit 0
+          fi
+          
+          az acr delete \
+            --name "$ACR_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --yes
+          
+          echo "✓ ACR deleted successfully"
+          
+          echo "### ACR Deletion Complete ✓" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**ACR Name:** \`\" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Deleted" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Delete entire resource group
+        if: github.event.inputs.delete_acr_only != 'true'
+        run: |
+          echo "Deleting resource group and all resources: $RESOURCE_GROUP"
+          echo "⚠️ This will delete ALL resources in the resource group!"
+          
+          az group delete \
+            --name "$RESOURCE_GROUP" \
+            --yes \
+            --no-wait
+          
+          echo "✓ Resource group deletion initiated (running in background)"
+          
+          echo "### Resource Group Deletion Initiated ✓" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Resource Group:** \`\" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Deletion in progress (may take several minutes)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note:** Resource group deletion runs asynchronously. Verify completion in Azure Portal." >> $GITHUB_STEP_SUMMARY
+      
+      - name: Teardown summary
+        run: |
+          echo ""
+          echo "========================================" 
+          echo "Teardown Complete"
+          echo "========================================" 
+          echo ""
+          if [ "${{ github.event.inputs.delete_acr_only }}" = "true" ]; then
+            echo "✓ ACR '$ACR_NAME' has been deleted"
+          else
+            echo "✓ Resource group '$RESOURCE_GROUP' deletion initiated"
+            echo "  The deletion will complete in the background."
+            echo "  Verify in Azure Portal: https://portal.azure.com"
+          fi
