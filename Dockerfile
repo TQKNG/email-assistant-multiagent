@@ -14,7 +14,8 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 COPY requirements.txt ./
 
-RUN uv pip install --no-cache -r requirements.txt
+RUN uv pip install --no-cache -r requirements.txt && \
+    uv pip install --no-cache --upgrade "jaraco.context>=6.1.0" "wheel>=0.46.2"
 
 # ---------------------------------------------------------------------------
 
