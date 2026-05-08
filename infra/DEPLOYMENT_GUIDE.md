@@ -181,7 +181,7 @@ Use the Command Palette (`Ctrl+Shift+P`) and run:
 
 The managed identity automatically receives:
 - **ACR Pull** role (if using Azure Container Registry)
-- **Azure AI User** role at the Cognitive Services account scope (if `azureAiAccountName` is configured)
+- **Azure AI User** role at the Azure AI Foundry project scope (if `azureAiAccountName` and `azureAiProjectName` are configured)
 - **Cognitive Services OpenAI User** role (if OpenAI account configured)
 
 ## Configuration Reference
@@ -213,13 +213,9 @@ The Container App automatically configures:
 
 ## Monitoring and Troubleshooting
 
-### Azure AI resource type troubleshooting
+### Azure AI Foundry hub/project troubleshooting
 
-Azure supports two different AI resource layouts, and the Bicep parameters need to match the one you actually deployed:
-
-#### Azure AI Foundry
-
-Use this when your endpoint and resources follow a hub/project structure:
+This deployment expects Azure AI Foundry resources that follow the hub/project hierarchy:
 
 ```text
 AI Hub (Microsoft.CognitiveServices/accounts)
@@ -227,21 +223,10 @@ AI Hub (Microsoft.CognitiveServices/accounts)
       └─ Models and agents
 ```
 
-- Keep `azureAiAccountName` set to the hub/account name.
-- Set `azureAiProjectName` to the project name when your runtime endpoint includes `/projects/<project-name>`.
-
-#### Standard Cognitive Services with model deployments
-
-Use this when your resource group only contains a Cognitive Services account plus model deployments:
-
-```text
-Account (Microsoft.CognitiveServices/accounts)
-  └─ Deployments (gpt-4o-mini, DeepSeek-R1, text-embedding-3-small, ...)
-```
-
-- Set `azureAiAccountName` to the Cognitive Services account name.
-- Leave `azureAiProjectName` empty.
-- The template now assigns the managed identity's **Azure AI User** role at the account scope, so deployment does not depend on a Foundry project resource that may not exist.
+- Set `azureAiAccountName` to the AI hub/account name.
+- Set `azureAiProjectName` to the project name from the endpoint path (`/projects/<project-name>`).
+- Verify both resources already exist before running the deployment, because the template grants RBAC against the existing project resource.
+- Keep `azureAiProjectEndpoint` aligned with the same hub/project pair so the container app and RBAC target the same Foundry project.
 
 ### View Deployment Status
 ```powershell

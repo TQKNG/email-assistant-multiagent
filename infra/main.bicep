@@ -75,11 +75,10 @@ param internalManagedEnvironment bool = false
 @description('Azure AI project endpoint used by the app.')
 param azureAiProjectEndpoint string
 
-@description('Optional Azure AI or Cognitive Services account name used by the app. When set, the container app managed identity receives the Azure AI User role at the account scope.')
+@description('Optional Azure AI Foundry account name that owns the target project. When set together with azureAiProjectName, the container app managed identity receives the Azure AI User role at the project scope.')
 param azureAiAccountName string = ''
 
-@description('Optional Azure AI Foundry project name used by the app endpoint. Leave empty for standard Cognitive Services account deployments. This value does not control RBAC assignment.')
-#disable-next-line no-unused-params
+@description('Optional Azure AI Foundry project name used by the app. Leave empty to skip project-level RBAC assignment.')
 param azureAiProjectName string = ''
 
 @description('Optional Azure OpenAI or Azure AI Services account name for direct account-scope inference. When set, the container app managed identity receives the Cognitive Services OpenAI User role at that scope.')
@@ -110,7 +109,7 @@ var resolvedVirtualNetworkName = !empty(virtualNetworkName) ? virtualNetworkName
 var resolvedNetworkSecurityGroupName = !empty(networkSecurityGroupName) ? networkSecurityGroupName : take('nsg-${sanitizedPrefix}-${suffix}', 80)
 var useAcr = !empty(containerRegistryName)
 var useNetworkLayer = enableNetworkLayer
-var assignAzureAiAccountRole = !empty(azureAiAccountName)
+var assignAzureAiProjectRole = !empty(azureAiAccountName) && !empty(azureAiProjectName)
 var assignOpenAiAccountRole = !empty(openAiAccountName)
 var managedEnvironmentNetworkProperties = useNetworkLayer ? {
   workloadProfiles: [
@@ -194,8 +193,13 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-04-01' e
   name: containerRegistryName
 }
 
-resource azureAiAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = if (assignAzureAiAccountRole) {
+resource azureAiAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = if (assignAzureAiProjectRole) {
   name: azureAiAccountName
+}
+
+resource azureAiProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' existing = if (assignAzureAiProjectRole) {
+  parent: azureAiAccount
+  name: azureAiProjectName
 }
 
 resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = if (assignOpenAiAccountRole) {
@@ -229,9 +233,9 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
-resource azureAiAccountRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (assignAzureAiAccountRole) {
-  name: guid(azureAiAccount.id, userAssignedIdentity.id, 'azure-ai-user')
-  scope: azureAiAccount
+resource azureAiProjectRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (assignAzureAiProjectRole) {
+  name: guid(azureAiProject.id, userAssignedIdentity.id, 'azure-ai-user')
+  scope: azureAiProject
   properties: {
     principalId: userAssignedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -383,7 +387,7 @@ output managedEnvironmentName string = managedEnvironment.name
 output managedIdentityClientId string = userAssignedIdentity.properties.clientId
 output managedIdentityPrincipalId string = userAssignedIdentity.properties.principalId
 output logAnalyticsWorkspaceName string = logAnalyticsWorkspace.name
-output azureAiAccountRoleAssigned bool = assignAzureAiAccountRole
+output azureAiProjectRoleAssigned bool = assignAzureAiProjectRole
 output openAiAccountRoleAssigned bool = assignOpenAiAccountRole
 output virtualNetworkName string = useNetworkLayer ? virtualNetwork.name : ''
 output infrastructureSubnetId string = useNetworkLayer ? infrastructureSubnet.id : ''
