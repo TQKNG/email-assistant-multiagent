@@ -48,9 +48,6 @@ param logRetentionInDays int = 30
 @description('Whether the Container Apps managed environment should be zone redundant.')
 param zoneRedundant bool = false
 
-@description('Whether the managed environment allows public network access.')
-param environmentPublicNetworkAccess string = 'Enabled'
-
 @description('Deploy a customer-managed virtual network layer for the Container Apps environment.')
 param enableNetworkLayer bool = false
 
@@ -69,7 +66,7 @@ param infrastructureSubnetAddressPrefix string = '10.40.0.0/27'
 @description('Network security group name for the delegated Container Apps subnet when the network layer is enabled.')
 param networkSecurityGroupName string = ''
 
-@description('Set true to create an internal-only Container Apps environment load balancer. When enabled, also set environmentPublicNetworkAccess to Disabled and consider setting ingressExternal to false.')
+@description('Set true to create an internal-only Container Apps environment load balancer. When enabled, consider setting ingressExternal to false.')
 param internalManagedEnvironment bool = false
 
 @description('Azure AI project endpoint used by the app.')
@@ -145,19 +142,19 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2025-07
   }
 }
 
-resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
+resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: userAssignedIdentityName
   location: location
   tags: commonTags
 }
 
-resource networkSecurityGroup 'Microsoft.Network/networkSecurityGroups@2024-07-01' = if (useNetworkLayer) {
+resource networkSecurityGroup 'Microsoft.Network/networkSecurityGroups@2024-05-01' = if (useNetworkLayer) {
   name: resolvedNetworkSecurityGroupName
   location: location
   tags: commonTags
 }
 
-resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' = if (useNetworkLayer) {
+resource virtualNetwork 'Microsoft.Network/virtualNetworks@2025-05-01' = if (useNetworkLayer) {
   name: resolvedVirtualNetworkName
   location: location
   tags: commonTags
@@ -170,7 +167,7 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-07-01' = if (use
   }
 }
 
-resource infrastructureSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-07-01' = if (useNetworkLayer) {
+resource infrastructureSubnet 'Microsoft.Network/virtualNetworks/subnets@2025-05-01' = if (useNetworkLayer) {
   parent: virtualNetwork
   name: infrastructureSubnetName
   properties: {
@@ -189,20 +186,20 @@ resource infrastructureSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-07
   }
 }
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-04-01' existing = if (useAcr) {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existing = if (useAcr) {
   name: containerRegistryName
 }
 
-resource azureAiAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = if (assignAzureAiProjectRole) {
+resource azureAiAccount 'Microsoft.CognitiveServices/accounts@2026-03-01' existing = if (assignAzureAiProjectRole) {
   name: azureAiAccountName
 }
 
-resource azureAiProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' existing = if (assignAzureAiProjectRole) {
+resource azureAiProject 'Microsoft.CognitiveServices/accounts/projects@2026-03-01' existing = if (assignAzureAiProjectRole) {
   parent: azureAiAccount
   name: azureAiProjectName
 }
 
-resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = if (assignOpenAiAccountRole) {
+resource openAiAccount 'Microsoft.CognitiveServices/accounts@2026-03-01' existing = if (assignOpenAiAccountRole) {
   name: openAiAccountName
 }
 
@@ -211,7 +208,6 @@ resource managedEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   location: location
   tags: commonTags
   properties: union({
-    publicNetworkAccess: environmentPublicNetworkAccess
     zoneRedundant: zoneRedundant
     appLogsConfiguration: {
       destination: 'log-analytics'
