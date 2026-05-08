@@ -47,7 +47,7 @@ param internalManagedEnvironment = false
 // ========================================
 
 // Required for runtime calls through DefaultAzureCredential.
-param azureAiProjectEndpoint = 'https://your-project.services.ai.azure.com/api/projects/your-project'
+param azureAiProjectEndpoint = 'https://langchain-academy-resource.services.ai.azure.com/api/projects/langchain-academy'
 
 // Note: Log retention and diagnostics are configured in the main template
 // with default values (30 days retention, diagnostics enabled)
