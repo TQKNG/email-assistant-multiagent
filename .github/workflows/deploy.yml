@@ -85,9 +85,9 @@ jobs:
       - name: Log in to Azure with OIDC
         uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
         with:
-          client-id: ${{ env.CLIENT_ID }}
-          tenant-id: ${{ env.TENANT_ID }}
-          subscription-id: ${{ env.SUBSCRIPTION_ID }}
+          client-id: ${{ github.event.inputs.client_id }}
+          tenant-id: ${{ github.event.inputs.tenant_id }}
+          subscription-id: ${{ github.event.inputs.subscription_id }}
       
       - name: Set Azure subscription context
         run: |
@@ -211,9 +211,9 @@ jobs:
       - name: Log in to Azure with OIDC
         uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
         with:
-          client-id: ${{ env.CLIENT_ID }}
-          tenant-id: ${{ env.TENANT_ID }}
-          subscription-id: ${{ env.SUBSCRIPTION_ID }}
+          client-id: ${{ github.event.inputs.client_id }}
+          tenant-id: ${{ github.event.inputs.tenant_id }}
+          subscription-id: ${{ github.event.inputs.subscription_id }}
       
       - name: Verify Azure context
         run: |
@@ -286,9 +286,9 @@ jobs:
       - name: Log in to Azure with OIDC
         uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
         with:
-          client-id: ${{ env.CLIENT_ID }}
-          tenant-id: ${{ env.TENANT_ID }}
-          subscription-id: ${{ env.SUBSCRIPTION_ID }}
+          client-id: ${{ github.event.inputs.client_id }}
+          tenant-id: ${{ github.event.inputs.tenant_id }}
+          subscription-id: ${{ github.event.inputs.subscription_id }}
       
       - name: Set Azure subscription context
         run: |
