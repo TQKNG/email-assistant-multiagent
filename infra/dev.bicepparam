@@ -52,10 +52,10 @@ param azureAiProjectEndpoint = 'https://langchain-academy-resource.services.ai.a
 // Note: Log retention and diagnostics are configured in the main template
 // with default values (30 days retention, diagnostics enabled)
 
-// Optional but recommended. When both names are set, the template grants Azure AI User to the container app identity.
-// The Foundry account and project must be in the same resource group as this deployment.
+// Optional but recommended. When the account name is set, the template grants Azure AI User
+// to the container app identity at the Cognitive Services account scope.
 param azureAiAccountName = 'langchain-academy-resource'
-param azureAiProjectName = 'langchain-academy'
+param azureAiProjectName = ''
 
 // Leave empty unless the app also needs direct account-scope OpenAI calls.
 // The account must be in the same resource group as this deployment.

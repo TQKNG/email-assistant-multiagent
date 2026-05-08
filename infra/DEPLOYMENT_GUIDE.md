@@ -105,7 +105,7 @@ This guide describes the revised Bicep infrastructure templates and deployment p
 3. **Configuration** - Update [dev.bicepparam](dev.bicepparam):
    - Set your container image reference
    - Configure Azure AI endpoint
-   - Set Azure AI account and project names
+   - Set the Azure AI account name, and set the project name only if you use Azure AI Foundry projects
    - Adjust networking parameters if needed
 
 ### Deployment Workflow
@@ -181,7 +181,7 @@ Use the Command Palette (`Ctrl+Shift+P`) and run:
 
 The managed identity automatically receives:
 - **ACR Pull** role (if using Azure Container Registry)
-- **Azure AI User** role (if Azure AI project configured)
+- **Azure AI User** role at the Cognitive Services account scope (if `azureAiAccountName` is configured)
 - **Cognitive Services OpenAI User** role (if OpenAI account configured)
 
 ## Configuration Reference
@@ -212,6 +212,36 @@ The Container App automatically configures:
 - `PORT` - Application port (8000)
 
 ## Monitoring and Troubleshooting
+
+### Azure AI resource type troubleshooting
+
+Azure supports two different AI resource layouts, and the Bicep parameters need to match the one you actually deployed:
+
+#### Azure AI Foundry
+
+Use this when your endpoint and resources follow a hub/project structure:
+
+```text
+AI Hub (Microsoft.CognitiveServices/accounts)
+  └─ Project (Microsoft.CognitiveServices/accounts/projects)
+      └─ Models and agents
+```
+
+- Keep `azureAiAccountName` set to the hub/account name.
+- Set `azureAiProjectName` to the project name when your runtime endpoint includes `/projects/<project-name>`.
+
+#### Standard Cognitive Services with model deployments
+
+Use this when your resource group only contains a Cognitive Services account plus model deployments:
+
+```text
+Account (Microsoft.CognitiveServices/accounts)
+  └─ Deployments (gpt-4o-mini, DeepSeek-R1, text-embedding-3-small, ...)
+```
+
+- Set `azureAiAccountName` to the Cognitive Services account name.
+- Leave `azureAiProjectName` empty.
+- The template now assigns the managed identity's **Azure AI User** role at the account scope, so deployment does not depend on a Foundry project resource that may not exist.
 
 ### View Deployment Status
 ```powershell
