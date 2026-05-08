@@ -1,0 +1,95 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": {
+      "value": "email-assistant-dev"
+    },
+    "containerImage": {
+      "value": "myregistry.azurecr.io/email-assistant:latest"
+    },
+    "containerRegistryName": {
+      "value": ""
+    },
+    "ingressExternal": {
+      "value": true
+    },
+    "targetPort": {
+      "value": 8000
+    },
+    "minReplicas": {
+      "value": 0
+    },
+    "maxReplicas": {
+      "value": 3
+    },
+    "httpConcurrentRequests": {
+      "value": 10
+    },
+    "cpuCores": {
+      "value": 1
+    },
+    "memory": {
+      "value": "2Gi"
+    },
+    "zoneRedundant": {
+      "value": false
+    },
+    "environmentPublicNetworkAccess": {
+      "value": "Enabled"
+    },
+    "enableNetworkLayer": {
+      "value": true
+    },
+    "virtualNetworkName": {
+      "value": "vnet-email-assistant-dev"
+    },
+    "virtualNetworkAddressPrefix": {
+      "value": "10.40.0.0/23"
+    },
+    "infrastructureSubnetName": {
+      "value": "aca-infra"
+    },
+    "infrastructureSubnetAddressPrefix": {
+      "value": "10.40.0.0/27"
+    },
+    "networkSecurityGroupName": {
+      "value": "nsg-email-assistant-dev"
+    },
+    "internalManagedEnvironment": {
+      "value": false
+    },
+    "azureAiProjectEndpoint": {
+      "value": "https://langchain-academy-resource.services.ai.azure.com/api/projects/langchain-academy"
+    },
+    "azureAiAccountName": {
+      "value": "langchain-academy-resource"
+    },
+    "azureAiProjectName": {
+      "value": "langchain-academy"
+    },
+    "openAiAccountName": {
+      "value": ""
+    },
+    "openAiChatModel": {
+      "value": "gpt-4o-mini"
+    },
+    "deepseekChatModel": {
+      "value": "DeepSeek-R1"
+    },
+    "knowledgeBaseAgentName": {
+      "value": "knowledge-base"
+    },
+    "knowledgeBaseAgentVersion": {
+      "value": "latest"
+    },
+    "tags": {
+      "value": {
+        "environment": "dev",
+        "app": "email-assistant",
+        "costCenter": "sandbox",
+        "owner": "devops-team"
+      }
+    }
+  }
+}
