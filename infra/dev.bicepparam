@@ -33,7 +33,7 @@ param memory = '2Gi'
 // ========================================
 
 param zoneRedundant = false  // Set to true for production
-param environmentPublicNetworkAccess = 'Enabled'
+// param environmentPublicNetworkAccess = 'Enabled'  // Not supported in stable API version
 param enableNetworkLayer = true
 param virtualNetworkName = 'vnet-email-assistant-dev'
 param virtualNetworkAddressPrefix = '10.40.0.0/23'
