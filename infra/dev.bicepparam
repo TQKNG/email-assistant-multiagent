@@ -54,8 +54,8 @@ param azureAiProjectEndpoint = 'https://langchain-academy-resource.services.ai.a
 
 // Optional but recommended. When both names are set, the template grants Azure AI User to the container app identity.
 // The Foundry account and project must be in the same resource group as this deployment.
-param azureAiAccountName = '<foundry-account-name>'
-param azureAiProjectName = '<foundry-project-name>'
+param azureAiAccountName = 'langchain-academy-resource'
+param azureAiProjectName = 'langchain-academy'
 
 // Leave empty unless the app also needs direct account-scope OpenAI calls.
 // The account must be in the same resource group as this deployment.
