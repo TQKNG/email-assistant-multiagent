@@ -193,7 +193,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2025-04-01' e
   name: containerRegistryName
 }
 
-resource azureAiAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = if (assignAzureAiProjectRole) {
+resource azureAiAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = if (assignAzureAiProjectRole) {
   name: azureAiAccountName
 }
 
@@ -202,11 +202,11 @@ resource azureAiProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-0
   name: azureAiProjectName
 }
 
-resource openAiAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = if (assignOpenAiAccountRole) {
+resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-10-01' existing = if (assignOpenAiAccountRole) {
   name: openAiAccountName
 }
 
-resource managedEnvironment 'Microsoft.App/managedEnvironments@2025-07-01' = {
+resource managedEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: environmentName
   location: location
   tags: commonTags
@@ -253,7 +253,7 @@ resource openAiAccountRoleAssignment 'Microsoft.Authorization/roleAssignments@20
   }
 }
 
-resource containerApp 'Microsoft.App/containerApps@2025-07-01' = {
+resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   name: containerAppName
   location: location
   tags: commonTags

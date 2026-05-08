@@ -105,7 +105,7 @@ This guide describes the revised Bicep infrastructure templates and deployment p
 3. **Configuration** - Update [dev.bicepparam](dev.bicepparam):
    - Set your container image reference
    - Configure Azure AI endpoint
-   - Set Azure AI account and project names
+   - Set the Azure AI account name, and set the project name only if you use Azure AI Foundry projects
    - Adjust networking parameters if needed
 
 ### Deployment Workflow
@@ -181,7 +181,7 @@ Use the Command Palette (`Ctrl+Shift+P`) and run:
 
 The managed identity automatically receives:
 - **ACR Pull** role (if using Azure Container Registry)
-- **Azure AI User** role (if Azure AI project configured)
+- **Azure AI User** role at the Azure AI Foundry project scope (if `azureAiAccountName` and `azureAiProjectName` are configured)
 - **Cognitive Services OpenAI User** role (if OpenAI account configured)
 
 ## Configuration Reference
@@ -212,6 +212,21 @@ The Container App automatically configures:
 - `PORT` - Application port (8000)
 
 ## Monitoring and Troubleshooting
+
+### Azure AI Foundry hub/project troubleshooting
+
+This deployment expects Azure AI Foundry resources that follow the hub/project hierarchy:
+
+```text
+AI Hub (Microsoft.CognitiveServices/accounts)
+  └─ Project (Microsoft.CognitiveServices/accounts/projects)
+      └─ Models and agents
+```
+
+- Set `azureAiAccountName` to the AI hub/account name.
+- Set `azureAiProjectName` to the project name from the endpoint path (`/projects/<project-name>`).
+- Verify both resources already exist before running the deployment, because the template grants RBAC against the existing project resource.
+- Keep `azureAiProjectEndpoint` aligned with the same hub/project pair so the container app and RBAC target the same Foundry project.
 
 ### View Deployment Status
 ```powershell
