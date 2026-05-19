@@ -167,7 +167,7 @@ jobs:
             --yes \
             --no-wait
           
-          echo "✓ Resource group deletion initiated (running in background)"
+          echo "✓ Resource group deletion initiated \(running in background\)"
           
           echo "### Resource Group Deletion Initiated ✓" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
