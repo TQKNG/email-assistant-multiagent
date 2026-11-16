@@ -200,6 +200,8 @@ The graph export is configured in `langgraph.json`:
 
 ## Notes
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development checks and pull request guidance.
+
 - Unit tests mock workflow execution to stay fast and independent from Azure runtime services.
 - Real workflow execution requires valid Azure environment and permissions.
 
